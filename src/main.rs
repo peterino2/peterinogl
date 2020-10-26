@@ -1,4 +1,5 @@
 use peter_gl::ShaderPipe;
+use std::mem::size_of;
 pub mod peter_gl;
 
 struct Game{
@@ -8,6 +9,7 @@ struct Game{
     rend: ShaderPipe,
     vbo: gl::types::GLuint,
     vao: gl::types::GLuint,
+    ebo: gl::types::GLuint,
 }
 
 
@@ -15,35 +17,69 @@ impl Game {
 
     pub fn start(&mut self) 
     {
-        // Set up the shader pipeline
 
-        unsafe {gl::ClearColor(0.3, 0.3, 0.5, 1.0);}
-
-
+        // -----------------------------------------------------
+        // Initializations 
+        // -----------------------------------------------------
         unsafe {
+            gl::ClearColor(0.2, 0.3, 0.2, 1.0);
+            gl::GenBuffers(1, &mut self.ebo);
             gl::GenBuffers(1, &mut self.vbo);
+            gl::GenVertexArrays(1, &mut self.vao);
+
+            // Vertex array needs to be bound prior to binding element 
+            // and buffer objects?
+            gl::BindVertexArray(self.vao);
         }
 
-        let triangle_vertices: Vec<f32> = vec![
-            -0.5, -0.5, 0.0,
-            0.5, -0.5, 0.0,
-            0.0, 0.5, 0.0
+        let vertices: Vec<f32> = vec![
+             0.5,  0.5,  0.0,
+             0.5, -0.5,  0.0,
+            -0.5, -0.5,  0.0,
+            -0.5,  0.5,  0.0,
         ];
 
+        let indices: Vec<i32> = vec![
+             0, 1, 3,
+             1, 2, 3,
+        ];
+
+        let texCoords[] = {
+        };
+
         unsafe {
+
+            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.ebo);
+            gl::BufferData(
+                gl::ELEMENT_ARRAY_BUFFER, (size_of::<f32>() as isize) * (indices.len() as isize), 
+                indices.as_ptr() as *const gl::types::GLvoid,
+                gl::STATIC_DRAW
+            );
+        }
+
+        unsafe {
+            // -----------------------------------------------------
+            // In this section 
+            // 
+            // We end up cooking up the vertex buffer object for the 
+            // main vertex locations
+            //
+            // recipe:
+            //
+            // vertex + indices = objects, directly translate 
+            // vertex values into screen co-ordinates
+            // -----------------------------------------------------
             gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
             gl::BufferData(
                 gl::ARRAY_BUFFER, // target
-                (triangle_vertices.len() * std::mem::size_of::<f32>()) as gl::types::GLsizeiptr, // size of data in bytes
-                triangle_vertices.as_ptr() as *const gl::types::GLvoid, // pointer to data
+                (vertices.len() * std::mem::size_of::<f32>()) as gl::types::GLsizeiptr, // size of data in bytes
+                vertices.as_ptr() as *const gl::types::GLvoid, // pointer to data
                 gl::STATIC_DRAW, // usage
             );
             gl::BindBuffer(gl::ARRAY_BUFFER, 0); // unbind the buffer
         }
 
         unsafe {
-            gl::GenVertexArrays(1, &mut self.vao);
-            gl::BindVertexArray(self.vao);
             gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
             gl::EnableVertexAttribArray(0); // this is "layout (location = 0)" in vertex shader
 
@@ -59,9 +95,7 @@ impl Game {
             gl::BindBuffer(gl::ARRAY_BUFFER, 0);
             gl::BindVertexArray(0);
         }
-
         'main: loop {
-            self.render();
             let mut event_pump = self.sdl.event_pump().unwrap();
             for _event in event_pump.poll_iter() {
                 match _event {
@@ -79,22 +113,25 @@ impl Game {
                     _ => {},
                 }
             }
+            self.render();
         }
     }
 
     fn render(&mut self)
     {
         // render window contents here
-        self.rend.activate();
 
         unsafe {
             gl::Clear(gl::COLOR_BUFFER_BIT);
+
+            self.rend.activate();
             gl::BindVertexArray(self.vao);
-            gl::DrawArrays(
-                gl::TRIANGLES, // mode
-                0, // starting index in the enabled arrays
-                3 // number of indices to be rendered
-            );
+
+            gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
+            gl::DrawElements(
+                gl::TRIANGLES, 6, gl::UNSIGNED_INT, std::ptr::null());
+
+            gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL);
         }
         self.win.gl_swap_window();
     }
@@ -131,6 +168,7 @@ fn init_game() -> Game
         rend: rend,
         vbo: 0,
         vao: 0,
+        ebo: 0,
     }
 }
 
