@@ -1,4 +1,5 @@
 use peter_gl::ShaderPipe;
+pub mod peter_gl;
 
 struct Game{
     win: sdl2::video::Window,
@@ -9,11 +10,11 @@ struct Game{
     vao: gl::types::GLuint,
 }
 
-pub mod peter_gl;
 
 impl Game {
 
-    fn start(&mut self) {
+    pub fn start(&mut self) 
+    {
         // Set up the shader pipeline
 
         unsafe {gl::ClearColor(0.3, 0.3, 0.5, 1.0);}
@@ -65,6 +66,16 @@ impl Game {
             for _event in event_pump.poll_iter() {
                 match _event {
                     sdl2::event::Event::Quit {..} => break 'main,
+                    sdl2::event::Event::Window {timestamp, window_id, win_event} => match win_event {
+
+                            sdl2::event::WindowEvent::Resized (x, y) => {
+                                println!("[WindowEvent] Resized to {} {}", x, y);
+                                unsafe{ gl::Viewport(0,0, x as gl::types::GLint, y as gl::types::GLint)}
+                            },
+
+                            _ => {},
+
+                        }
                     _ => {},
                 }
             }
@@ -123,12 +134,11 @@ fn init_game() -> Game
     }
 }
 
-
 fn main() {
-    let mut game = init_game();
+    let mut gamestate = init_game();
 
-    /* --- enter the videogame --- */
-    /* | */   game.start();   /* | */
-    /* --- enter the videogame --- */
+    /* --- enter the videogame  --- */
+    /* | */ gamestate.start(); /* | */
+    /* --- enter the videogame  --- */
 }
 

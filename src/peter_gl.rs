@@ -170,4 +170,3 @@ fn shader_from_source(
     }
     Ok(id)
 }
-
