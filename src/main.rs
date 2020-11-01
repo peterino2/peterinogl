@@ -1,6 +1,9 @@
 use peter_gl::ShaderPipe;
 use std::mem::size_of;
 pub mod peter_gl;
+use stb_image::image;
+use gl::types as gt;
+use std::ffi::{CString, CStr, c_void};
 
 struct Game{
     win: sdl2::video::Window,
@@ -10,6 +13,7 @@ struct Game{
     vbo: gl::types::GLuint,
     vao: gl::types::GLuint,
     ebo: gl::types::GLuint,
+    tex: gl::types::GLuint,
 }
 
 
@@ -33,10 +37,10 @@ impl Game {
         }
 
         let vertices: Vec<f32> = vec![
-             0.5,  0.5,  0.0,
-             0.5, -0.5,  0.0,
-            -0.5, -0.5,  0.0,
-            -0.5,  0.5,  0.0,
+             0.5,  0.5,  0.0,       1.0, 0.0, 0.0,      1.0, 1.0,
+             0.5, -0.5,  0.0,       1.0, 1.0, 0.0,      1.0, 0.0,
+            -0.5, -0.5,  0.0,       0.0, 0.0, 1.0,      0.0, 0.0, 
+            -0.5,  0.5,  0.0,       1.0, 1.0, 0.0,      0.0, 1.0,
         ];
 
         let indices: Vec<i32> = vec![
@@ -44,8 +48,49 @@ impl Game {
              1, 2, 3,
         ];
 
-        let texCoords[] = {
+        let tex_coords: Vec<f32> = vec![
+            0.0, 0.0, 
+            1.0, 0.0,
+            0.5, 1.0
+        ];
+
+        let mut texture_image= match stb_image::image::load("assets/textures/wall.jpg") {
+            image::LoadResult::Error(e) => unsafe{
+                println!("{}", CStr::from_ptr(stb_image::stb_image::bindgen::stbi_failure_reason()).to_string_lossy());
+                panic!("{}", e)
+            },
+            image::LoadResult::ImageF32(i) => panic!("UNEXPECTED IMAGE FORMAT"),
+            image::LoadResult::ImageU8(i) => i,
         };
+
+        // Configure the texture parameters for texture behaviour
+        let border_color: Vec<f32> = vec![ 1.0, 1.0, 0.0, 1.0];
+        unsafe { 
+            gl::TexParameterfv(gl::TEXTURE_2D, gl::TEXTURE_BORDER_COLOR, border_color.as_ptr());            // configure 
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as gl::types::GLint);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as gl::types::GLint);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as gl::types::GLint);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::types::GLint);
+
+            // mipmaps
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR as gl::types::GLint);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::types::GLint);
+        }
+
+
+        unsafe{
+            gl::GenTextures(1, &mut self.tex);
+
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::BindTexture(gl::TEXTURE_2D, self.tex);
+            gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGB as gt::GLint,
+                texture_image.width as gt::GLint, 
+                texture_image.height as gt::GLint, 
+                0, gl::RGB, gl::UNSIGNED_BYTE, texture_image.data.as_mut_ptr() as *mut std::ffi::c_void
+            );
+            gl::Uniform1i(gl::GetUniformLocation(self.rend.prog_id, "ourTexture".as_ptr() as *mut i8), 0);
+
+        }
 
         unsafe {
 
@@ -81,16 +126,40 @@ impl Game {
 
         unsafe {
             gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
-            gl::EnableVertexAttribArray(0); // this is "layout (location = 0)" in vertex shader
 
+            // describe  texture co-ordinate attribute
             gl::VertexAttribPointer(
                 0, // index of the generic vertex attribute ("layout (location = 0)")
                 3, // the number of components per generic vertex attribute
                 gl::FLOAT, // data type
                 gl::FALSE, // normalized (int-to-float conversion)
-                (3 * std::mem::size_of::<f32>()) as gl::types::GLint, // stride (byte offset between consecutive attributes)
-                std::ptr::null() // offset of the first component
+                (8 * std::mem::size_of::<f32>()) as gl::types::GLint, // stride (byte offset between consecutive attributes)
+                (0 * std::mem::size_of::<f32>()) as *mut usize as *mut c_void// offset of the first component
             );
+            gl::EnableVertexAttribArray(0); // this is "layout (location = 0)" in vertex shader
+
+            // describe Color attribute
+            gl::VertexAttribPointer(
+                1, // index of the generic vertex attribute ("layout (location = 1)")
+                3, // the number of components per generic vertex attribute
+                gl::FLOAT, // data type
+                gl::FALSE, // normalized (int-to-float conversion)
+                (8 * std::mem::size_of::<f32>()) as gl::types::GLint, // stride (byte offset between consecutive attributes)
+                (3 * std::mem::size_of::<f32>()) as *mut usize as *mut c_void// offset of the first component
+            );
+            gl::EnableVertexAttribArray(1); // this is "layout (location = 0)" in vertex shader
+
+            // describe texture attribute
+            gl::VertexAttribPointer(
+                2, // index of the generic vertex attribute ("layout (location = 1)")
+                2, // the number of components per generic vertex attribute
+                gl::FLOAT, // data type
+                gl::FALSE, // normalized (int-to-float conversion)
+                (8 * std::mem::size_of::<f32>()) as gl::types::GLint, // stride (byte offset between consecutive attributes)
+                (6 * std::mem::size_of::<f32>()) as *mut usize as *mut c_void// offset of the first component
+            );
+            gl::EnableVertexAttribArray(2); // this is "layout (location = 0)" in vertex shader
+
             // unbind the vertex array
             gl::BindBuffer(gl::ARRAY_BUFFER, 0);
             gl::BindVertexArray(0);
@@ -100,15 +169,20 @@ impl Game {
             for _event in event_pump.poll_iter() {
                 match _event {
                     sdl2::event::Event::Quit {..} => break 'main,
-                    sdl2::event::Event::Window {timestamp, window_id, win_event} => match win_event {
+                    // sdl2::event::Event::Window {timestamp, window_id, win_event} => match win_event {
+                    sdl2::event::Event::Window {
+                        timestamp, 
+                        window_id,
+                        win_event
+                    } => match win_event {
 
                             sdl2::event::WindowEvent::Resized (x, y) => {
                                 println!("[WindowEvent] Resized to {} {}", x, y);
-                                unsafe{ gl::Viewport(0,0, x as gl::types::GLint, y as gl::types::GLint)}
+                                unsafe{ 
+                                    gl::Viewport(0,0, x as gl::types::GLint, y as gl::types::GLint)
+                                }
                             },
-
                             _ => {},
-
                         }
                     _ => {},
                 }
@@ -124,14 +198,16 @@ impl Game {
         unsafe {
             gl::Clear(gl::COLOR_BUFFER_BIT);
 
-            self.rend.activate();
             gl::BindVertexArray(self.vao);
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::BindTexture(gl::TEXTURE_2D, self.tex);
+            self.rend.activate();
 
-            gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
+            //gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
             gl::DrawElements(
                 gl::TRIANGLES, 6, gl::UNSIGNED_INT, std::ptr::null());
 
-            gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL);
+            //gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL);
         }
         self.win.gl_swap_window();
     }
@@ -147,7 +223,8 @@ fn init_game() -> Game
 
     let gl_attr = video_subsystem.gl_attr();
     gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
-    gl_attr.set_context_version(4, 5);
+    
+    gl_attr.set_context_version(4, 0);
 
     let window = video_subsystem
         .window("Game", 900, 700)
@@ -169,6 +246,7 @@ fn init_game() -> Game
         vbo: 0,
         vao: 0,
         ebo: 0,
+        tex: 0,
     }
 }
 
@@ -179,4 +257,3 @@ fn main() {
     /* | */ gamestate.start(); /* | */
     /* --- enter the videogame  --- */
 }
-

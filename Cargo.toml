@@ -11,3 +11,9 @@ version = "0.34.2"
 
 [dependencies.gl]
 version = "0.14.0"
+
+[dependencies.glm]
+version = "0.2.3"
+
+[dependencies.stb_image]
+version = "0.2.2"

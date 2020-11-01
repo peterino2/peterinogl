@@ -7,7 +7,7 @@ use std::io;
 pub struct ShaderPipe{
     frag_shader: Shader,
     vert_shader: Shader,
-    prog_id: gl::types::GLuint,
+    pub prog_id: gl::types::GLuint,
 }
 
 impl ShaderPipe{
