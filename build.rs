@@ -5,8 +5,6 @@ use std::env;
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 pub const SEARCH: &str = "vendor/sdl2/win64";
 
-#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-pub const SEARCH: &str = "vendor/sdl2/win64";
 
 fn main() {
     let cwd = env::current_dir().unwrap();
