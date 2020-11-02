@@ -1,8 +1,11 @@
-use std::ffi::{CString, CStr};
+use std::ffi::{CString, CStr, c_void};
 use std::path;
 use std::fs;
 use std::io::Read;
 use std::io;
+use std::mem::size_of;
+use stb_image::image;
+use gl::types as gt;
 
 pub struct ShaderPipe{
     frag_shader: Shader,
@@ -11,6 +14,31 @@ pub struct ShaderPipe{
 }
 
 impl ShaderPipe{
+
+    pub fn set_sampler(&mut self, name: &str, texid: gt::GLuint)
+    {
+        self.activate();
+        unsafe {
+            gl::BindTexture(gl::TEXTURE_2D, texid);
+            gl::Uniform1i(gl::GetUniformLocation(self.prog_id, name.as_ptr() as *mut i8), 0);
+        }
+    }
+
+    pub fn configure_textures(&mut self)
+    {
+        let border_color: Vec<f32> = vec![ 1.0, 1.0, 0.0, 1.0];
+        unsafe { 
+            gl::TexParameterfv(gl::TEXTURE_2D, gl::TEXTURE_BORDER_COLOR, border_color.as_ptr());            // configure 
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as gl::types::GLint);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as gl::types::GLint);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as gl::types::GLint);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::types::GLint);
+
+            // mipmaps
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR as gl::types::GLint);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::types::GLint);
+        }
+    }
 
     pub fn construct() -> ShaderPipe
     {
@@ -122,6 +150,7 @@ impl Shader{
         let id = shader_from_source(source, kind)?;
         Ok(Shader{id})
     }
+
 }
 
 impl Drop for Shader{
@@ -169,4 +198,157 @@ fn shader_from_source(
         );
     }
     Ok(id)
+}
+
+/// Opinionated texture parameters
+
+pub struct GraphicsObject{
+    pub ebo: gt::GLuint,
+    pub vbo: gt::GLuint,
+    pub vao: gt::GLuint,
+    pub tex: gt::GLuint,
+    vertices: Vec<f32>,
+    indices: Vec<i32>,
+}
+
+
+// Class for holding Opengl handles and 
+// helping with abstracting opengl functions
+impl GraphicsObject
+{
+
+    fn gen_buffers(&mut self){
+        unsafe {
+            gl::GenBuffers(1, &mut self.ebo);
+            gl::GenBuffers(1, &mut self.vbo);
+            gl::GenVertexArrays(1, &mut self.vao);
+            gl::GenTextures(1, &mut self.tex);
+        }
+        println!("[gen_buffers] buffers generated");
+    }
+
+
+    fn configure_vertex_formats(&mut self)
+    {
+        unsafe{
+            gl::BindVertexArray(self.vao);
+            gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
+
+            gl::BufferData(
+                gl::ARRAY_BUFFER, // target
+                (self.vertices.len() * std::mem::size_of::<f32>()) as gl::types::GLsizeiptr, // size of data in bytes
+                self.vertices.as_ptr() as *const gl::types::GLvoid, // pointer to data
+                gl::STATIC_DRAW, // usage
+            );
+
+            // describe  texture co-ordinate attribute
+            gl::VertexAttribPointer(
+                0, // index of the generic vertex attribute ("layout (location = 0)")
+                3, // the number of components per generic vertex attribute
+                gl::FLOAT, // data type
+                gl::FALSE, // normalized (int-to-float conversion)
+                (8 * std::mem::size_of::<f32>()) as gl::types::GLint, // stride (byte offset between consecutive attributes)
+                (0 * std::mem::size_of::<f32>()) as *mut usize as *mut c_void// offset of the first component
+            );
+            gl::EnableVertexAttribArray(0); // this is "layout (location = 0)" in vertex shader
+
+            // describe Color attribute
+            gl::VertexAttribPointer(
+                1, // index of the generic vertex attribute ("layout (location = 1)")
+                3, // the number of components per generic vertex attribute
+                gl::FLOAT, // data type
+                gl::FALSE, // normalized (int-to-float conversion)
+                (8 * std::mem::size_of::<f32>()) as gl::types::GLint, // stride (byte offset between consecutive attributes)
+                (3 * std::mem::size_of::<f32>()) as *mut usize as *mut c_void// offset of the first component
+            );
+            gl::EnableVertexAttribArray(1); // this is "layout (location = 0)" in vertex shader
+
+            // describe texture attribute
+            gl::VertexAttribPointer(
+                2, // index of the generic vertex attribute ("layout (location = 1)")
+                2, // the number of components per generic vertex attribute
+                gl::FLOAT, // data type
+                gl::FALSE, // normalized (int-to-float conversion)
+                (8 * std::mem::size_of::<f32>()) as gl::types::GLint, // stride (byte offset between consecutive attributes)
+                (6 * std::mem::size_of::<f32>()) as *mut usize as *mut c_void// offset of the first component
+            );
+            gl::EnableVertexAttribArray(2); // this is "layout (location = 0)" in vertex shader
+
+        }
+        println!("[configure] Format Objects completed");
+    }
+
+    fn configure_element_format(&mut self)
+    {
+        unsafe{
+            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.vao);
+            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.ebo);
+            gl::BufferData(
+                gl::ELEMENT_ARRAY_BUFFER, (size_of::<f32>() as isize) * (self.indices.len() as isize), 
+                self.indices.as_ptr() as *const gl::types::GLvoid,
+                gl::STATIC_DRAW
+            );
+        }
+
+        println!("[configure] element array formatted");
+    }
+
+    pub fn draw(&mut self)
+    {
+        unsafe{
+            gl::BindVertexArray(self.vao);
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::BindTexture(gl::TEXTURE_2D, self.tex);
+            gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL);
+            gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, std::ptr::null());
+        }
+
+    }
+
+    pub fn load_texture(&mut self, filepath: &path::Path) -> image::Image<u8>{
+        let mut texture_image= match stb_image::image::load(filepath) {
+            image::LoadResult::Error(e) => unsafe{
+                println!("{}", CStr::from_ptr(stb_image::stb_image::bindgen::stbi_failure_reason()).to_string_lossy());
+                panic!("{}", e)
+            },
+            image::LoadResult::ImageF32(i) => panic!("UNEXPECTED IMAGE FORMAT"),
+            image::LoadResult::ImageU8(i) => i,
+        };
+
+        unsafe{
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::BindTexture(gl::TEXTURE_2D, self.tex);
+            gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
+            gl::PixelStorei(gl::UNPACK_ROW_LENGTH, 0);
+            gl::PixelStorei(gl::UNPACK_SKIP_PIXELS, 0);
+            gl::PixelStorei(gl::UNPACK_SKIP_ROWS, 0);
+            gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGB as gt::GLint,
+                texture_image.width as gt::GLint, 
+                texture_image.height as gt::GLint, 
+                0, gl::RGB, gl::UNSIGNED_BYTE, texture_image.data.as_mut_ptr() as *mut std::ffi::c_void
+            );
+            gl::GenerateMipmap(gl::TEXTURE_2D);
+        }
+        println!("[Load_texture]: Texture loaded from {}", filepath.to_string_lossy());
+        return texture_image;
+    }
+
+    pub fn new(vertices: Vec<f32>, indices: Vec<i32>) -> GraphicsObject{
+        // Construct a new Graphics Object
+        let mut o: GraphicsObject = GraphicsObject{
+            ebo: 0,
+            vbo: 0,
+            vao: 0,
+            tex: 0,
+            vertices: vertices,
+            indices: indices,
+        };
+
+        o.gen_buffers();
+        o.configure_vertex_formats();
+        o.configure_element_format();
+
+        return o
+    }
+
 }
